@@ -104,7 +104,7 @@ map_15 <- raster("Smoothed Gini/focal/gini_2015.tif")
 #WB data
 wb_data <- read.csv("World bank data/WDIData.csv")
 wb_data <- melt(wb_data)
-wb_data1 <- dcast(wb_data, ï..Country.Name + Country.Code + variable ~ Indicator.Name)
+wb_data1 <- dcast(wb_data, ?..Country.Name + Country.Code + variable ~ Indicator.Name)
 
 yearlights_1990_calib <- calc(lights_1992, na_fun_light, filename = "Light/Lights 1990 calib.tif", format = "GTiff", overwrite = TRUE)
 pop_calib_1990 <- calc(pop_count_1990, na_fun_pop, filename = "Pop/Pop Count/Pop 1990 calib.tif", format = "GTiff", overwrite = TRUE)
@@ -258,13 +258,16 @@ gini_calc <- function(year, address) {
   }
 }
 
-#Merging world and gini dataframes----
-world_2010 <- merge(world, swiid_10[,1:2], by = "ISO3", all.x = F)
-writeOGR(world_2010, dsn = "world boundaries", layer = "world_2010", driver = "ESRI Shapefile")
-world_2015 <- merge(world, df_inequality_2015, by = "ISO3", all.x = F)
-writeOGR(world_2015, dsn = "world boundaries", layer = "world_2015", driver = "ESRI Shapefile")
-world_2006 <- merge(world, swiid_06, by = "ISO3", all.x = F)
-writeOGR(world_2006, dsn = "world boundaries", layer = "world_2006", driver = "ESRI Shapefile")
+#Global Gini Maps by Country----
+world_2010 <- merge(world, swiid_df[swiid_df$year == 2010,], by = "ISO3", all.x = T)
+spplot(world_2010, c("gini_disp"), col.regions = colorRampPalette(brewer.pal(9, 'YlOrRd'))(20), 
+       cuts = 19, col = "grey")
+spplot(world_2010, c("light_gini_lpp"), col.regions = colorRampPalette(brewer.pal(9, 'YlOrRd'))(20), 
+       cuts = 19, col = "grey")
+spplot(world_2010, c("gini_disp_se"), col.regions = colorRampPalette(brewer.pal(9, 'Blues'))(20), 
+       cuts = 19, col = "grey")
+spplot(world_2010, c("sol"), col.regions = colorRampPalette(brewer.pal(9, 'Blues'))(20), 
+       cuts = 19, col = "grey")
 
 
 #World Wealth Gini distribution
@@ -548,4 +551,12 @@ v_chn <- rasterToPoints(china, spatial = T)
 vgram_chn <- variogram(log(CHN)~1, data = v_chn)
 plot(vgram_pak, pch = 20, cex = 2)
 
-
+##Paper Figures
+#Fig 1
+spplot(world_2010, c("gini_disp"), col.regions = colorRampPalette(brewer.pal(9, 'YlOrRd'))(20), 
+       cuts = 19, col = "grey")
+spplot(world_2010, c("light_gini_lpp"), col.regions = colorRampPalette(brewer.pal(9, 'YlOrRd'))(20), 
+       cuts = 19, col = "grey")
+ggplot(data = swiid_df[swiid_df$year == 2010 & swiid_df$gini_disp_se < 10 & swiid_df$sol > 300000,], aes(light_gini_lpp, gini_disp)) + 
+  geom_text(aes(label = country), size = 3) + stat_smooth(method = lm, se = F) + 
+  theme(axis.title.x=element_blank(), axis.title.y=element_blank())
