@@ -1,10 +1,8 @@
 #Libraries----
 library(easypackages)
 libraries("Hmisc", "rworldmap", "velox", "plm", "parallel","foreach", "doParallel", "fields", "olsrr", "countrycode", "sp", "rgdal", "openxlsx", "ggplot2", "raster", "ineq", "ncdf4", "plyr", "gstat", "spatial.tools", "GGally", "mgcv", "rasterVis", "tictoc", "spatialEco", "usdm")
-setwd("D:/R/Light paper data/World Inequality")
-load("D:/R/Light paper data/World Inequality/world inq analysis.RData")
-rasterOptions(maxmemory = 1e8)
-rasterOptions(chunksize = 1e7)
+setwd("D:/R/Light Inequality/Illuminating global economic inequality using night light data")
+load("D:/R/Light Inequality/Illuminating global economic inequality using night light data/world inq analysis.RData")
 
 #Colors
 jet.colors <- colorRampPalette(c("#00007F", "blue", "#007FFF", "cyan", "#7FFF7F", "yellow", "#FF7F00", "red", "#7F0000"))
@@ -93,6 +91,13 @@ map_00 <- raster("Smoothed Gini/focal/gini_2000.tif")
 map_05 <- raster("Smoothed Gini/focal/gini_2005.tif")
 map_10 <- raster("Smoothed Gini/focal/gini_2010.tif")
 map_15 <- raster("Smoothed Gini/focal/gini_2015.tif")
+cmap_9095 <- raster("Smoothed Gini/focal/c_gini_1990_1995.tif")
+cmap_9500 <- raster("Smoothed Gini/focal/c_gini_1995_2000.tif")
+cmap_0005 <- raster("Smoothed Gini/focal/c_gini_2000_2005.tif")
+cmap_0510 <- raster("Smoothed Gini/focal/c_gini_2005_2010.tif")
+cmap_1015 <- raster("Smoothed Gini/focal/c_gini_2010_2015.tif")
+cmap_9010 <- raster("Smoothed Gini/focal/c_gini_1990_2010.tif")
+
 
 #Intercaliberation of light data
 #F12	1995	0.4103	1.2116	-0.0035	
@@ -415,6 +420,20 @@ ggplot(data = US_ineq_10[US_ineq_10$sol > 300000,], aes(light_gini_lpp, Estimate
   labs(x = "Light Gini", y = "Income Gini", title = "US Inequality by States 2010", subtitle = "49 States")
 summary(lm(Estimate..Gini.Index ~ light_gini_lpp, data = US_ineq_10[US_ineq_10$sol > 300000,]))
 cor.test(~ Estimate..Gini.Index + light_gini_lpp, data = US_ineq_10[US_ineq_10$sol > 300000,])
+US_county <- readOGR(dsn = "US boundaries/County boundaries", layer = "gz_2010_us_050_00_500k")
+US_gini_county <- read.csv("American Community Survey (ACS)/County data/ACS_10_5YR_B19083_with_ann.csv", skip = 1)
+colnames(US_gini_county)[1] <- "GEO_ID"; crs(US_county) <- crs(USA);
+US_county <- merge(US_county, US_gini_county, by = "GEO_ID")
+USA <- raster("Country rasters/LPP 2010/USA.tif")
+n <- length(US_county$GEO_ID)
+id <- US_county$GEO_ID
+for (i in 1:n) {
+  cat("iteration =", i, "\n")
+  ras <- crop(USA, US_county[id[i],])
+  r <- rasterize(US_county[id[i],], ras)
+  l <- mask(ras, r, filename = paste("Country rasters/County lpp 10/", id[i], ".tif", sep = ""), format = "GTiff", overwrite = T)
+}
+
 
 #Global Gini maps----
 pak <- raster(paste("Country rasters/LPP 2010/", "PAK", ".tif", sep = ""))
@@ -425,11 +444,12 @@ map_00 <- focal(lpp_calib_2000, mat, fun = Gini, na.rm = T, filename = "Smoothed
 map_05 <- focal(lpp_calib_2005, mat, fun = Gini, na.rm = T, filename = "Smoothed Gini/gini_2005.tif", format = "GTiff", overwrite = T)
 map_10 <- focal(lpp_calib_2010, mat, fun = Gini, na.rm = T, filename = "Smoothed Gini/gini_2010.tif", format = "GTiff", overwrite = T)
 map_15 <- focal(lpp_calib_2015, mat, fun = Gini, na.rm = T, filename = "Smoothed Gini/gini_2015.tif", format = "GTiff", overwrite = T)
-cmap_9095 <- overlay(Gini_1995, Gini_1990, fun = dif, filename = "Smoothed Gini/c_gini_1990_1995.tif", format = "GTiff", overwrite = TRUE)
-cmap_9500 <- overlay(Gini_2000, Gini_1995, fun = dif, filename = "Smoothed Gini/c_gini_1990_1995.tif", format = "GTiff", overwrite = TRUE)
-cmap_0005 <- overlay(Gini_2005, Gini_2000, fun = dif, filename = "Smoothed Gini/c_gini_1990_1995.tif", format = "GTiff", overwrite = TRUE)
-cmap_0510 <- overlay(Gini_2010, Gini_2005, fun = dif, filename = "Smoothed Gini/c_gini_1990_1995.tif", format = "GTiff", overwrite = TRUE)
-cmap_1015 <- overlay(Gini_2015, Gini_2010, fun = dif, filename = "Smoothed Gini/c_gini_1990_1995.tif", format = "GTiff", overwrite = TRUE)
+cmap_9095 <- overlay(map_95, map_90, fun = dif, filename = "Smoothed Gini/c_gini_1990_1995.tif", format = "GTiff", overwrite = TRUE)
+cmap_9500 <- overlay(map_00, map_95, fun = dif, filename = "Smoothed Gini/c_gini_1995_2000.tif", format = "GTiff", overwrite = TRUE)
+cmap_0005 <- overlay(map_05, map_00, fun = dif, filename = "Smoothed Gini/c_gini_2000_2005.tif", format = "GTiff", overwrite = TRUE)
+cmap_0510 <- overlay(map_10, map_05, fun = dif, filename = "Smoothed Gini/c_gini_2005_2010.tif", format = "GTiff", overwrite = TRUE)
+cmap_1015 <- overlay(map_15, map_10, fun = dif, filename = "Smoothed Gini/c_gini_2010_2015.tif", format = "GTiff", overwrite = TRUE)
+cmap_9010 <- overlay(map_10, map_90, fun = dif, filename = "Smoothed Gini/c_gini_1990_2010.tif", format = "GTiff", overwrite = TRUE)
 
 #Gini maps
 agg_map_90 <- aggregate(lpp_calib_1990, fact = 99, fun = Gini, filename = "Smoothed Gini/agg_gini_1990.tif", format = "GTiff", overwrite = T)
@@ -471,12 +491,12 @@ bl_gini_stack <- stack(bl_gini_map_90, bl_gini_map_95, bl_gini_map_00, bl_gini_m
 gini_avg <- overlay(gini_stack, fun  = mean, na.rm = T)
 bl_gini_avg <- overlay(bl_gini_stack, fun  = mean, na.rm = T)
 
-country_map <- function(fname, id) {
-  n <- as.character(world[world$ISO3 == "PAK", ]$NAME)
+country_map <- function(fname, id, des_fname) {
+  n <- as.character(world[world$ISO3 == id, ]$NAME)
   ras <- crop(fname, world[world$ISO3 == id,])
   r <- rasterize(world[world$ISO3 == id,], ras)
-  l <- mask(ras, r)
-  levelplot(l, margin = F, main = paste("Gini Map", "-", n), par.settings = myTheme, at = brk_g)
+  l <- mask(ras, r, filename = des_fname, format = "GTiff", overwrite = TRUE)
+  levelplot(l, margin = F, par.settings = myTheme, at = brk_g)
 }
 
 
@@ -536,10 +556,8 @@ ggplot(aes(`GINI index (World Bank estimate)`, light_gini), data = wb_data[wb_da
   stat_smooth(method = lm, se = F) + labs(y = "Light Gini", title = "Economic Growth - Income Inequality 2010")
 
 #Variogram 
-sample <- sampleRegular(lpp_calib_2010, size = 1e6, xy = T)
-sample <- as.data.frame(na.omit(sample))
-coordinates(sample) = ~x+y
-vgram_10 <- variogram(log(LPP_2010)~1, data = sample)
+lpp_10 <- rasterToPoints(lpp_calib_2010, spatial = T) 
+vgram_lpp_10 <- variogram(log(LPP_2010)~1, data = lpp_10)
 
 pak <- raster("Country rasters/LPP 2010/PAK.tif")
 v_pak <- rasterToPoints(pak, spatial = T)
@@ -551,6 +569,10 @@ v_chn <- rasterToPoints(china, spatial = T)
 vgram_chn <- variogram(log(CHN)~1, data = v_chn)
 plot(vgram_pak, pch = 20, cex = 2)
 
+#Distribution of inequality
+gini_10 <- rasterToPoints(map_10)
+c_gini_9010 <- rasterToPoints(cmap_9010)
+
 ##Paper Figures
 #Fig 1
 spplot(world_2010, c("gini_disp"), col.regions = colorRampPalette(brewer.pal(9, 'YlOrRd'))(20), 
@@ -560,3 +582,23 @@ spplot(world_2010, c("light_gini_lpp"), col.regions = colorRampPalette(brewer.pa
 ggplot(data = swiid_df[swiid_df$year == 2010 & swiid_df$gini_disp_se < 10 & swiid_df$sol > 300000,], aes(light_gini_lpp, gini_disp)) + 
   geom_text(aes(label = country), size = 3) + stat_smooth(method = lm, se = F) + 
   theme(axis.title.x=element_blank(), axis.title.y=element_blank())
+
+#Fig 2
+levelplot(map_10, margin = F, par.settings = myTheme, at = brk_g) + 
+  layer(sp.lines(world, lwd = 0.8, col = 'darkgrey'))
+levelplot(cmap_9010, margin = F, par.settings = myTheme, at = brk, colorkey = mycolorkey) + 
+  layer(sp.lines(world, lwd = 0.8, col = 'darkgrey'))
+hist(gini_10[, 3], probability = T, border = 'blue', col = 'cornflowerblue',
+     ylab = NULL, xlab = NULL, main = NULL); 
+lines(density(gini_10[, 3], adjust = 5), lwd = 2, col = 'darkblue')
+hist(c_gini_9010[, 3], probability = T, border = 'blue', col = 'cornflowerblue',
+     ylab = NULL, xlab = NULL, main = NULL); 
+lines(density(c_gini_9010[, 3], adjust = 5), lwd = 2, col = 'darkblue')
+
+#Fig 3
+usa_10 <- raster("Smoothed Gini/focal/USA/usa_gini_2010.tif")
+usa_10 <- setExtent(usa_10, ext = extent(-179, -50, 19, 71), keepres = T)
+levelplot(usa_10, margin = F, par.settings = myTheme, at = brk_g)
+
+
+
