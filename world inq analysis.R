@@ -1,6 +1,6 @@
 #Libraries----
 library(easypackages)
-libraries("Hmisc", "rworldmap", "velox", "plm", "parallel","foreach", "doParallel", "fields", "olsrr", "countrycode", "sp", "rgdal", "openxlsx", "ggplot2", "raster", "ineq", "ncdf4", "plyr", "gstat", "spatial.tools", "GGally", "mgcv", "rasterVis", "tictoc", "spatialEco", "usdm")
+libraries("Hmisc", "rworldmap", "velox", "plm", "fields", "olsrr", "countrycode", "sp", "rgdal", "openxlsx", "ggplot2", "raster", "ineq", "ncdf4", "plyr", "gstat", "spatial.tools", "GGally", "mgcv", "rasterVis", "tictoc", "spatialEco", "usdm", "boot", "mixtools")
 setwd("D:/R/Light Inequality/Illuminating global economic inequality using night light data")
 load("D:/R/Light Inequality/Illuminating global economic inequality using night light data/world inq analysis.RData")
 
@@ -413,27 +413,34 @@ US_ineq_10[53, 7] <- NA
 cor(US_ineq_10[2:53, c("light_gini_lpp", "Estimate..Gini.Index")], use = "complete.obs")
 US_ineq_10$diff <- abs(US_ineq_10$Estimate..Gini.Index - US_ineq_10$light_gini_lpp)
 cor(US_ineq_10[order(US_ineq_10$diff),][1:50, c("light_gini_lpp", "Estimate..Gini.Index")], use = "complete.obs")
-cor(US_ineq_10[US_ineq_10$sol > 300000, c("light_gini_lpp", "Estimate..Gini.Index")], use = "complete.obs")
-ggplot(data = US_ineq_10[US_ineq_10$sol > 300000,], aes(light_gini_lpp, Estimate..Gini.Index)) + 
+cor(US_ineq_10[US_ineq_10$sol > 1e6, c("light_gini_lpp", "Estimate..Gini.Index")], use = "complete.obs")
+ggplot(data = US_ineq_10[US_ineq_10$sol > 1.1e6,], aes(light_gini_lpp, Estimate..Gini.Index)) + 
   geom_text(aes(label = NAME), size = 3) + stat_smooth(method = lm, se = F) + 
   annotate("text", label = "Correlation = 0.3728564, p-value < 0.05", x = 0.43, y = 0.53, size = 3, colour = "red") + 
   labs(x = "Light Gini", y = "Income Gini", title = "US Inequality by States 2010", subtitle = "49 States")
 summary(lm(Estimate..Gini.Index ~ light_gini_lpp, data = US_ineq_10[US_ineq_10$sol > 300000,]))
 cor.test(~ Estimate..Gini.Index + light_gini_lpp, data = US_ineq_10[US_ineq_10$sol > 300000,])
+colnames(US_ineq_10)[2] <- "GEO_ID"
+US_states_10 <- merge(US_states_10, US_ineq_10, by = "GEO_ID")
 US_county <- readOGR(dsn = "US boundaries/County boundaries", layer = "gz_2010_us_050_00_500k")
 US_gini_county <- read.csv("American Community Survey (ACS)/County data/ACS_10_5YR_B19083_with_ann.csv", skip = 1)
+USA <- raster("Country rasters/LPP 2010/USA.tif")
 colnames(US_gini_county)[1] <- "GEO_ID"; crs(US_county) <- crs(USA);
 US_county <- merge(US_county, US_gini_county, by = "GEO_ID")
-USA <- raster("Country rasters/LPP 2010/USA.tif")
 n <- length(US_county$GEO_ID)
-id <- US_county$GEO_ID
 for (i in 1:n) {
   cat("iteration =", i, "\n")
-  ras <- crop(USA, US_county[id[i],])
-  r <- rasterize(US_county[id[i],], ras)
-  l <- mask(ras, r, filename = paste("Country rasters/County lpp 10/", id[i], ".tif", sep = ""), format = "GTiff", overwrite = T)
+  id <- US_county$GEO_ID[i]
+  ras <- raster(paste("Country rasters/County lpp 10/", id, ".tif", sep = ""))
+  p <- rasterToPoints(ras)
+  US_county$sol[i] <- sum(p[,3])
 }
-
+s <- seq(1000, 1500000, 1000)
+c <- NA
+for (i in 1:length(s)) {
+c[i] <- cor(US_ineq_10[US_ineq_10$sol > s[i], c(4, 6)], use = "p")[2]
+}
+plot(s, c)
 
 #Global Gini maps----
 pak <- raster(paste("Country rasters/LPP 2010/", "PAK", ".tif", sep = ""))
@@ -571,7 +578,32 @@ plot(vgram_pak, pch = 20, cex = 2)
 
 #Distribution of inequality
 gini_10 <- rasterToPoints(map_10)
+mean(gini_10[,3]); sd(gini_10[,3]) 
+gini_10_s <- sample(gini_10[,3], 1e7)
 c_gini_9010 <- rasterToPoints(cmap_9010)
+mean(c_gini_9010[,3]); sd(c_gini_9010[,3]) 
+gini_10_nm <- normalmixEM(gini_10_s, k = 2)
+plot(gini_10_nm, density = T, which = 2)
+sdnorm = function(x, mean, sd, lambda){lambda*dnorm(x, mean = mean, sd = sd)}
+
+#Bootstrapping
+pak_df <- rasterToPoints(pak)
+Gini(pak_df[,3])
+gini <- function(d, i) {Gini(d[i])}
+b <- boot(pak_df[,3], gini, 100)
+plot(b)
+ci <- boot.ci(b, type = "basic")
+myboot <- function(d) {
+  gini <- function(d, i) {Gini(d[i])}
+  b <- boot(d, gini, 100)
+  return(sd(b$t))
+}
+
+xx <- raster(matrix(1:10000, 100, 100))
+plot(xx); text(xx)
+f_xx <- focal(xx, matrix(1,3,3), Gini)
+b_xx <- focal(xx, matrix(1,3,3), myboot)
+plot(f_xx); text(f_xx)
 
 ##Paper Figures
 #Fig 1
@@ -583,7 +615,7 @@ ggplot(data = swiid_df[swiid_df$year == 2010 & swiid_df$gini_disp_se < 10 & swii
   geom_text(aes(label = country), size = 3) + stat_smooth(method = lm, se = F) + 
   theme(axis.title.x=element_blank(), axis.title.y=element_blank())
 
-#Fig 2
+#Fig 3
 levelplot(map_10, margin = F, par.settings = myTheme, at = brk_g) + 
   layer(sp.lines(world, lwd = 0.8, col = 'darkgrey'))
 levelplot(cmap_9010, margin = F, par.settings = myTheme, at = brk, colorkey = mycolorkey) + 
@@ -592,13 +624,180 @@ hist(gini_10[, 3], probability = T, border = 'blue', col = 'cornflowerblue',
      ylab = NULL, xlab = NULL, main = NULL); 
 lines(density(gini_10[, 3], adjust = 5), lwd = 2, col = 'darkblue')
 hist(c_gini_9010[, 3], probability = T, border = 'blue', col = 'cornflowerblue',
-     ylab = NULL, xlab = NULL, main = NULL); 
-lines(density(c_gini_9010[, 3], adjust = 5), lwd = 2, col = 'darkblue')
+     ylab = "", xlab = "", main = NULL); 
+lines(density(c_gini_9010[, 3], adjust = 5), lwd = 2, col = 'darkblue', lty = 2)
+grid()
+ggplot(data = data.frame(gini_10_s), aes(x = gini_10_s)) + 
+  geom_histogram(aes(y = ..density..), fill = 'cornflowerblue', color = 'black') + 
+  geom_density(adjust = 5, col = 'darkblue', size = 1, linetype = 'dashed') + 
+  stat_function(fun = sdnorm, args = list(mean = gini_10_nm$mu[1], sd = gini_10_nm$sigma[1], lambda = gini_10_nm$lambda[1]), geom = "area", fill = 'red', alpha = 0.5) + 
+  stat_function(fun = sdnorm, args = list(mean = gini_10_nm$mu[2], sd = gini_10_nm$sigma[2], lambda = gini_10_nm$lambda[2]), geom = "area", fill = 'green', alpha = 0.5) + 
+  labs(x = "", y = "") + theme_minimal()
+ggplot(data = c_gini_9010, aes(x = c_gini_1990_2010)) + 
+  geom_histogram(aes(y = ..density..), fill = 'cornflowerblue', color = 'black') + 
+  geom_density(adjust = 5, col = 'darkblue', size = 1, linetype = 'dashed') + 
+  labs(x = "", y = "") + theme_minimal()
 
-#Fig 3
+
+#Fig 2
+ggplot(data = US_ineq_10[US_ineq_10$sol > 1.1e6,], aes(light_gini_lpp, Estimate..Gini.Index)) + 
+  geom_text(aes(label = NAME), size = 3) + stat_smooth(method = lm, se = F) +
+  theme(axis.title.x=element_blank(), axis.title.y=element_blank())
+
+US_states_10@bbox <- as.matrix(extent(usa_10))
+spplot(US_states_10, c("Estimate..Gini.Index"), 
+       col.regions = colorRampPalette(brewer.pal(9, 'Reds'))(50), cuts = 49, col = "transparent")
+spplot(US_states_10, c("light_gini"), 
+       col.regions = colorRampPalette(brewer.pal(9, 'Reds'))(50), cuts = 49, col = "transparent")
+spplot(US_county, c("Estimate..Gini.Index"), 
+       col.regions = colorRampPalette(brewer.pal(9, 'Reds'))(50), cuts = 49, col = "transparent")
+spplot(US_county, c("Estimate..Gini.Index"), 
+       col.regions = my.colors(100), cuts = 99, col = "transparent")
+spplot(US_county, c("light_gini"), 
+       col.regions = my.colors(100), cuts = 99, col = "transparent")
+reds <- rasterTheme(colorRampPalette(brewer.pal(9, 'Reds'))(50))
 usa_10 <- raster("Smoothed Gini/focal/USA/usa_gini_2010.tif")
 usa_10 <- setExtent(usa_10, ext = extent(-179, -50, 19, 71), keepres = T)
-levelplot(usa_10, margin = F, par.settings = myTheme, at = brk_g)
+levelplot(usa_10, margin = F, par.settings = reds, at = brk_g, xlab = NULL, ylab = NULL, 
+          scales = list(draw = F))
+
+#Fig 4
+hi <- WIID[WIID$income_cat == 'High Income', 'ISO3']
+mi <- WIID[WIID$income_cat == 'Middle Income', 'ISO3']
+li <- WIID[WIID$income_cat == 'Low Income', 'ISO3']
+swiid_df[swiid_df$ISO3 %in% hi, 'income_cat'] <- 'High Income'
+swiid_df[swiid_df$ISO3 %in% mi, 'income_cat'] <- 'Middle Income'
+swiid_df[swiid_df$ISO3 %in% li, 'income_cat'] <- 'Low Income'
+ggplot(data = swiid_df, aes(income_cat, light_gini_lpp)) + 
+  geom_boxplot(colour = 'darkblue', fill = 'lightblue', size = 1) +
+  labs(x = '', y = '') +
+  theme_minimal() + xlim(c('High Income', 'Low Income', 'Middle Income'))
+ggplot(data = swiid_df, aes(income_cat, gini_disp)) + 
+  geom_boxplot(colour = 'darkblue', fill = 'lightblue', size = 1) +
+  labs(x = '', y = '') +
+  theme_minimal() + xlim(c('High Income', 'Low Income', 'Middle Income'))
+ggplot(data = swiid_df, aes(region, light_gini_lpp)) + 
+  geom_boxplot(colour = 'red4', fill = 'indianred1', size = 1) +
+  labs(x = '', y = '') +
+  theme_minimal() 
+ggplot(data = swiid_df, aes(region, gini_disp)) + 
+  geom_boxplot(colour = 'red4', fill = 'indianred1', size = 1) +
+  labs(x = '', y = '') +
+  theme_minimal() 
+wilcox.test(swiid_df[swiid_df$income_cat == "High Income", "light_gini_lpp"], 
+            swiid_df[swiid_df$income_cat == "Low Income", "light_gini_lpp"], 
+            alternative = "two.sided")
+wilcox.test(swiid_df[swiid_df$income_cat == "High Income", "light_gini_lpp"], 
+            swiid_df[swiid_df$income_cat == "Middle Income", "light_gini_lpp"], 
+            alternative = "two.sided")
+by(swiid_df$light_gini_lpp, swiid_df$income_cat, mean)
+by(swiid_df$light_gini_lpp, swiid_df$region, mean)
+
+#Fig 5 
+usa_90 <- raster("Smoothed Gini/focal/USA/usa_gini_1990.tif")
+usa_95 <- raster("Smoothed Gini/focal/USA/usa_gini_1995.tif")
+usa_00 <- raster("Smoothed Gini/focal/USA/usa_gini_2000.tif")
+usa_05 <- raster("Smoothed Gini/focal/USA/usa_gini_2005.tif")
+usa_10 <- raster("Smoothed Gini/focal/USA/usa_gini_2010.tif")
+usa_90 <- setExtent(usa_90, ext = extent(-179, -50, 19, 71), keepres = T)
+usa_95 <- setExtent(usa_95, ext = extent(-179, -50, 19, 71), keepres = T)
+usa_00 <- setExtent(usa_00, ext = extent(-179, -50, 19, 71), keepres = T)
+usa_05 <- setExtent(usa_05, ext = extent(-179, -50, 19, 71), keepres = T)
+usa_10 <- setExtent(usa_10, ext = extent(-179, -50, 19, 71), keepres = T)
+levelplot(usa_90, margin = F, par.settings = myTheme, at = brk_g, xlab = NULL, ylab = NULL, 
+          scales = list(draw = F))
+levelplot(usa_95, margin = F, par.settings = myTheme, at = brk_g, xlab = NULL, ylab = NULL, 
+          scales = list(draw = F))
+levelplot(usa_00, margin = F, par.settings = myTheme, at = brk_g, xlab = NULL, ylab = NULL, 
+          scales = list(draw = F))
+levelplot(usa_05, margin = F, par.settings = myTheme, at = brk_g, xlab = NULL, ylab = NULL, 
+          scales = list(draw = F))
+levelplot(usa_10, margin = F, par.settings = myTheme, at = brk_g, xlab = NULL, ylab = NULL, 
+          scales = list(draw = F))
+usa_cmap_10 <- raster("Smoothed Gini/focal/USA/usa_cmap_9010.tif")
+usa_cmap_10 <- setExtent(usa_cmap_10, ext = extent(-179, -50, 19, 71), keepres = T)
+levelplot(usa_cmap_10, margin = F, par.settings = myTheme, at = brk_g)
+chn_90 <- raster("Smoothed Gini/focal/China/chn_gini_1990.tif")
+chn_95 <- raster("Smoothed Gini/focal/China/chn_gini_1995.tif")
+chn_00 <- raster("Smoothed Gini/focal/China/chn_gini_2000.tif")
+chn_05 <- raster("Smoothed Gini/focal/China/chn_gini_2005.tif")
+chn_10 <- raster("Smoothed Gini/focal/China/chn_gini_2010.tif")
+levelplot(chn_90, margin = F, par.settings = myTheme, at = brk_g, xlab = NULL, ylab = NULL, 
+          scales = list(draw = F))
+levelplot(chn_95, margin = F, par.settings = myTheme, at = brk_g, xlab = NULL, ylab = NULL, 
+          scales = list(draw = F))
+levelplot(chn_00, margin = F, par.settings = myTheme, at = brk_g, xlab = NULL, ylab = NULL, 
+          scales = list(draw = F))
+levelplot(chn_05, margin = F, par.settings = myTheme, at = brk_g, xlab = NULL, ylab = NULL, 
+          scales = list(draw = F))
+levelplot(chn_10, margin = F, par.settings = myTheme, at = brk_g, xlab = NULL, ylab = NULL, 
+          scales = list(draw = F))
+bra_90 <- raster("Smoothed Gini/focal/Brazil/bra_gini_1990.tif")
+bra_95 <- raster("Smoothed Gini/focal/Brazil/bra_gini_1995.tif")
+bra_00 <- raster("Smoothed Gini/focal/Brazil/bra_gini_2000.tif")
+bra_05 <- raster("Smoothed Gini/focal/Brazil/bra_gini_2005.tif")
+bra_10 <- raster("Smoothed Gini/focal/Brazil/bra_gini_2010.tif")
+levelplot(bra_90, margin = F, par.settings = myTheme, at = brk_g, xlab = NULL, ylab = NULL, 
+          scales = list(draw = F))
+levelplot(bra_95, margin = F, par.settings = myTheme, at = brk_g, xlab = NULL, ylab = NULL, 
+          scales = list(draw = F))
+levelplot(bra_00, margin = F, par.settings = myTheme, at = brk_g, xlab = NULL, ylab = NULL, 
+          scales = list(draw = F))
+levelplot(bra_05, margin = F, par.settings = myTheme, at = brk_g, xlab = NULL, ylab = NULL, 
+          scales = list(draw = F))
+levelplot(bra_10, margin = F, par.settings = myTheme, at = brk_g, xlab = NULL, ylab = NULL, 
+          scales = list(draw = F))
+ind_90 <- raster("Smoothed Gini/focal/India/ind_gini_1990.tif")
+ind_95 <- raster("Smoothed Gini/focal/India/ind_gini_1995.tif")
+ind_00 <- raster("Smoothed Gini/focal/India/ind_gini_2000.tif")
+ind_05 <- raster("Smoothed Gini/focal/India/ind_gini_2005.tif")
+ind_10 <- raster("Smoothed Gini/focal/India/ind_gini_2010.tif")
+levelplot(ind_90, margin = F, par.settings = myTheme, at = brk_g, xlab = NULL, ylab = NULL, 
+          scales = list(draw = F))
+levelplot(ind_95, margin = F, par.settings = myTheme, at = brk_g, xlab = NULL, ylab = NULL, 
+          scales = list(draw = F))
+levelplot(ind_00, margin = F, par.settings = myTheme, at = brk_g, xlab = NULL, ylab = NULL, 
+          scales = list(draw = F))
+levelplot(ind_05, margin = F, par.settings = myTheme, at = brk_g, xlab = NULL, ylab = NULL, 
+          scales = list(draw = F))
+levelplot(ind_10, margin = F, par.settings = myTheme, at = brk_g, xlab = NULL, ylab = NULL, 
+          scales = list(draw = F))
+pak_90 <- raster("Smoothed Gini/focal/PAK/pak_gini_1990.tif")
+pak_95 <- raster("Smoothed Gini/focal/PAK/pak_gini_1995.tif")
+pak_00 <- raster("Smoothed Gini/focal/PAK/pak_gini_2000.tif")
+pak_05 <- raster("Smoothed Gini/focal/PAK/pak_gini_2005.tif")
+pak_10 <- raster("Smoothed Gini/focal/PAK/pak_gini_2010.tif")
+levelplot(pak_90, margin = F, par.settings = myTheme, at = brk_g, xlab = NULL, ylab = NULL, 
+          scales = list(draw = F))
+levelplot(pak_95, margin = F, par.settings = myTheme, at = brk_g, xlab = NULL, ylab = NULL, 
+          scales = list(draw = F))
+levelplot(pak_00, margin = F, par.settings = myTheme, at = brk_g, xlab = NULL, ylab = NULL, 
+          scales = list(draw = F))
+levelplot(pak_05, margin = F, par.settings = myTheme, at = brk_g, xlab = NULL, ylab = NULL, 
+          scales = list(draw = F))
+levelplot(pak_10, margin = F, par.settings = myTheme, at = brk_g, xlab = NULL, ylab = NULL, 
+          scales = list(draw = F))
+
+ggplot(data = swiid_df[swiid_df$ISO3 %in% c("IND", "BRA", "CHN"),], aes(year, gini_disp, color = ISO3)) + 
+  geom_point(size = 4) +
+  geom_line(size = 1) + 
+  labs(x = 'Year', y = 'Income Gini') + xlim(1990, 2010) +
+  theme_minimal() + scale_color_discrete(name = "Country")
+ggplot(data = swiid_df[swiid_df$ISO3 %in% c("IND", "BRA", "CHN"),], aes(year, light_gini_lpp, color = ISO3)) + 
+  geom_point(size = 4) +
+  geom_line(size = 1) + 
+  labs(x = 'Year', y = 'Income Gini') + xlim(1990, 2010) +
+  theme_minimal() + scale_color_discrete(name = "Country")
+
+ggplot(data = swiid_df[swiid_df$region == "Europe", ], aes(year, light_gini_lpp)) + 
+  geom_boxplot() +
+  labs(x = 'Year', y = 'Income Gini') +
+  theme_minimal() + xlim(c("1990", "1995", "2000", "2005", "2010"))
+
+ggplot(data = swiid_df[swiid_df$region == "Asia", ], aes(year, light_gini_lpp)) + 
+  geom_boxplot() +
+  labs(x = 'Year', y = 'Income Gini') +
+  theme_minimal() + xlim(c("1990", "1995", "2000", "2005", "2010"))
 
 
-
+boxplot(light_gini_lpp ~ region, data = swiid_df)
