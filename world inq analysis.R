@@ -7,8 +7,6 @@ load("D:/R/Light Inequality/Illuminating global economic inequality using night 
 #Colors
 jet.colors <- colorRampPalette(c("#00007F", "blue", "#007FFF", "cyan", "#7FFF7F", "yellow", "#FF7F00", "red", "#7F0000"))
 
-#load("D:/R/Light paper data/World Inequality/The Standardized World Income Inequality Database/swiid6_1/swiid6_1.rda")
-
 #Common files----
 world <- readOGR(dsn = "world boundaries", layer = "TM_WORLD_BORDERS-0.3")
 world_2010 <- readOGR(dsn = "world boundaries", layer = "world_2010")
@@ -98,37 +96,15 @@ cmap_0510 <- raster("Smoothed Gini/focal/c_gini_2005_2010.tif")
 cmap_1015 <- raster("Smoothed Gini/focal/c_gini_2010_2015.tif")
 cmap_9010 <- raster("Smoothed Gini/focal/c_gini_1990_2010.tif")
 
-
-#Intercaliberation of light data
-#F12	1995	0.4103	1.2116	-0.0035	
-#F15	2000	0.1029	1.0845	-0.0010	
-#F15	2005	-0.6201	1.3504	-0.0049	
-#DNadjusted = C0 + C1 ? DN + C2 ? DN2
-#Elvidge, C. D.,  (2009). A fifteen year record of global natural gas flaring derived from satellite data. Energies, 2(3), 595-622
-
 #WB data
 wb_data <- read.csv("World bank data/WDIData.csv")
 wb_data <- melt(wb_data)
 wb_data1 <- dcast(wb_data, ?..Country.Name + Country.Code + variable ~ Indicator.Name)
-
 yearlights_1990_calib <- calc(lights_1992, na_fun_light, filename = "Light/Lights 1990 calib.tif", format = "GTiff", overwrite = TRUE)
 pop_calib_1990 <- calc(pop_count_1990, na_fun_pop, filename = "Pop/Pop Count/Pop 1990 calib.tif", format = "GTiff", overwrite = TRUE)
 pop_calib_1990 <- spatial_sync_raster(pop_calib_1990, lights_1990_calib)
 writeRaster(pop_calib_1990, filename = "Pop/Pop Count/Pop 1990 calib.tif", format = "GTiff", overwrite = TRUE)
 lpp_calib_1990 <- overlay(lights_1990_calib, pop_calib_1990, fun = div, filename = "LPP/LPP 1990.tif", format = "GTiff", overwrite = TRUE)
-
-
-#VIIRS light data - merge---- 
-r1 <- raster("SVDNB_npp_20150101-20151231_00N060E_vcm-orm-ntl_v10_c201701311200.avg_rade9.tif")
-r2 <- raster("SVDNB_npp_20150101-20151231_00N060W_vcm-orm-ntl_v10_c201701311200.avg_rade9.tif")
-r3 <- raster("SVDNB_npp_20150101-20151231_00N180W_vcm-orm-ntl_v10_c201701311200.avg_rade9.tif")
-r4 <- raster("SVDNB_npp_20150101-20151231_75N060E_vcm-orm-ntl_v10_c201701311200.avg_rade9.tif")
-r5 <- raster("SVDNB_npp_20150101-20151231_75N060W_vcm-orm-ntl_v10_c201701311200.avg_rade9.tif")
-r6 <- raster("SVDNB_npp_20150101-20151231_75N180W_vcm-orm-ntl_v10_c201701311200.avg_rade9.tif")
-r <- list(r1, r2, r3, r4, r5, r6)
-lights_2015 <- do.call(merge, r)
-writeRaster(lights_2015, filename="lights_2015.tif", format="GTiff", overwrite=TRUE)
-calc(lights_2015, na_fun, filename = "Light 2015 VIIRS/lights_2015(2).tif", format = "GTiff", overwrite = TRUE)
 
 #Functions----
 dif <- function(x, y) {x - y}
@@ -227,10 +203,6 @@ WIID_10$Gini <- as.vector(by(WIID_10_exp$Gini, WIID_10_exp$ISO3, function(x) mea
 WIID_10$Quality <- as.vector(by(WIID_10_exp$Quality, WIID_10_exp$ISO3, Mode))
 
 #Country rasters----
-
-#"Country rasters/LPP 1990/"
-#"Country rasters/Light 1990/"
-
 country_rasters <- function(year, fname, address) {
 n <- nrow(wb_data[wb_data$Year == year,])
 for (i in 1:n) {
@@ -354,7 +326,7 @@ gini_ts_country <- function(country) {
     geom_line(aes(x = year, y = gini_disp, color = "Gini")) +
     geom_point(aes(x = year, y = light_gini_lpp, color = "Light Gini"), size = 3) + 
     geom_line(aes(x = year, y = light_gini_lpp, color = "Light Gini")) +
-    labs(colour = "Income Inequality")
+    labs(colour = "Income Inequality") + xlim(1990, 2010)
 }
 
 gini_ts_country_sep <- function(country) {
@@ -441,6 +413,17 @@ for (i in 1:length(s)) {
 c[i] <- cor(US_ineq_10[US_ineq_10$sol > s[i], c(4, 6)], use = "p")[2]
 }
 plot(s, c)
+
+
+s <- seq(0.3, 0.01, length.out = 30)
+c <- NA
+for (i in 1:length(s)) {
+  c[i] <- cor(x = US_county@data[US_county@data$Margin.of.Error..Gini.Index < s[i], c(11, 9)], use = 'p')[2]
+}
+plot(s, c)
+
+plot(US_county@data[US_county@data$Margin.of.Error..Gini.Index < 0.02, c(11, 9)])
+summary(lm(Estimate..Gini.Index ~ light_gini, data = US_county@data[US_county@data$Margin.of.Error..Gini.Index < 0.02,]))
 
 #Global Gini maps----
 pak <- raster(paste("Country rasters/LPP 2010/", "PAK", ".tif", sep = ""))
@@ -582,6 +565,8 @@ mean(gini_10[,3]); sd(gini_10[,3])
 gini_10_s <- sample(gini_10[,3], 1e7)
 c_gini_9010 <- rasterToPoints(cmap_9010)
 mean(c_gini_9010[,3]); sd(c_gini_9010[,3]) 
+c_gini_9010_s <- sample(c_gini_9010[,3], 1e7)
+mean(c_gini_9010_s); sd(c_gini_9010_s)
 gini_10_nm <- normalmixEM(gini_10_s, k = 2)
 plot(gini_10_nm, density = T, which = 2)
 sdnorm = function(x, mean, sd, lambda){lambda*dnorm(x, mean = mean, sd = sd)}
@@ -605,17 +590,88 @@ f_xx <- focal(xx, matrix(1,3,3), Gini)
 b_xx <- focal(xx, matrix(1,3,3), myboot)
 plot(f_xx); text(f_xx)
 
-##Paper Figures
+#light map
+lcolors = colorRampPalette(c("white", "yellow" , "orange"))
+lTheme <- rasterTheme(lcolors(10))
+brk_g <- seq(0, 1, length.out = 100)
+brk <- c(-1, seq(-0.5, 0.5, 0.02), 1)
+mycolorkey <- list(labels = list(labels = seq(-1, 1, 0.25), at = seq(-1, 1, 0.25)))
+levelplot(lights_2010, margin = F, par.settings = lTheme) + 
+  layer(sp.lines(world, lwd = 0.8, col = 'darkgrey'))
+country <- raster('Country rasters/Light 2010/ESP.tif')
+#country <- setExtent(country, ext = extent(-179, -50, 19, 71), keepres = T) #for US
+levelplot(country, margin = F, par.settings = lTheme) + 
+  layer(sp.lines(world[world$ISO3 == 'ESP',], lwd = 0.8, col = 'darkgrey'))
+
+##Paper Figure
 #Fig 1
 spplot(world_2010, c("gini_disp"), col.regions = colorRampPalette(brewer.pal(9, 'YlOrRd'))(20), 
-       cuts = 19, col = "grey")
+       cuts = 19, col = "grey", par.settings=list(fontsize=list(text=20)))
 spplot(world_2010, c("light_gini_lpp"), col.regions = colorRampPalette(brewer.pal(9, 'YlOrRd'))(20), 
-       cuts = 19, col = "grey")
+       cuts = 19, col = "grey", par.settings=list(fontsize=list(text=20)))
 ggplot(data = swiid_df[swiid_df$year == 2010 & swiid_df$gini_disp_se < 10 & swiid_df$sol > 300000,], aes(light_gini_lpp, gini_disp)) + 
   geom_text(aes(label = country), size = 3) + stat_smooth(method = lm, se = F) + 
-  theme(axis.title.x=element_blank(), axis.title.y=element_blank())
+  theme(axis.title.x=element_blank(), axis.title.y=element_blank(), axis.text.x = element_text(size=14), axis.text.y = element_text(size=14))
+lm_gini <- lm(gini_disp ~ light_gini_lpp, data = swiid_df[swiid_df$year == 2010 & swiid_df$gini_disp_se < 10 & swiid_df$sol > 300000,])
+summary(lm_gini)
+
+#Fig 2
+hi <- WIID[WIID$income_cat == 'High Income', 'ISO3']
+mi <- WIID[WIID$income_cat == 'Middle Income', 'ISO3']
+li <- WIID[WIID$income_cat == 'Low Income', 'ISO3']
+swiid_df[swiid_df$ISO3 %in% hi, 'income_cat'] <- 'High Income'
+swiid_df[swiid_df$ISO3 %in% mi, 'income_cat'] <- 'Middle Income'
+swiid_df[swiid_df$ISO3 %in% li, 'income_cat'] <- 'Low Income'
+ggplot(data = swiid_df, aes(income_cat, light_gini_lpp)) + 
+  geom_boxplot(colour = 'darkblue', fill = 'lightblue', size = 1) +
+  labs(x = '', y = '') +
+  theme_minimal(base_size = 20) + xlim(c('High Income', 'Low Income', 'Middle Income'))
+ggplot(data = swiid_df, aes(income_cat, gini_disp)) + 
+  geom_boxplot(colour = 'darkblue', fill = 'lightblue', size = 1) +
+  labs(x = '', y = '') +
+  theme_minimal(base_size = 20) + xlim(c('High Income', 'Low Income', 'Middle Income'))
+ggplot(data = swiid_df, aes(region, light_gini_lpp)) + 
+  geom_boxplot(colour = 'red4', fill = 'indianred1', size = 1) +
+  labs(x = '', y = '') +
+  theme_minimal(base_size = 20) 
+ggplot(data = swiid_df, aes(region, gini_disp)) + 
+  geom_boxplot(colour = 'red4', fill = 'indianred1', size = 1) +
+  labs(x = '', y = '') +
+  theme_minimal(base_size = 20) 
+wilcox.test(swiid_df[swiid_df$income_cat == "High Income", "light_gini_lpp"], 
+            swiid_df[swiid_df$income_cat == "Low Income", "light_gini_lpp"], 
+            alternative = "two.sided")
+wilcox.test(swiid_df[swiid_df$income_cat == "High Income", "light_gini_lpp"], 
+            swiid_df[swiid_df$income_cat == "Middle Income", "light_gini_lpp"], 
+            alternative = "two.sided")
+by(swiid_df$light_gini_lpp, swiid_df$income_cat, mean)
+by(swiid_df$light_gini_lpp, swiid_df$region, mean)
 
 #Fig 3
+ggplot(data = US_ineq_10[US_ineq_10$sol > 1.1e6,], aes(light_gini_lpp*100, Estimate..Gini.Index*100)) + 
+  geom_text(aes(label = NAME), size = 3) + stat_smooth(method = lm, se = F) +
+  theme(axis.title.x=element_blank(), axis.title.y=element_blank(), axis.text.x = element_text(size=14), axis.text.y = element_text(size=14))
+lm_usgini <- lm(Estimate..Gini.Index ~ light_gini_lpp, data = US_ineq_10[US_ineq_10$sol > 1.1e6,])
+summary(lm_usgini)
+
+US_states_10@bbox <- as.matrix(extent(usa_10))
+spplot(US_states_10, c("Estimate..Gini.Index"), par.settings=list(fontsize=list(text=20)), 
+       col.regions = colorRampPalette(brewer.pal(9, 'Reds'))(50), cuts = 49, col = "transparent")
+spplot(US_states_10, c("light_gini"), par.settings=list(fontsize=list(text=20)),
+       col.regions = colorRampPalette(brewer.pal(9, 'Reds'))(50), cuts = 49, col = "transparent")
+spplot(US_county, c("Estimate..Gini.Index"), par.settings=list(fontsize=list(text=20)),
+       col.regions = colorRampPalette(brewer.pal(9, 'Reds'))(50), cuts = 49, col = "transparent")
+spplot(US_county, c("Estimate..Gini.Index"), par.settings=list(fontsize=list(text=20)),
+       col.regions = colorRampPalette(brewer.pal(9, 'Reds'))(50), cuts = 49, col = "transparent")
+spplot(US_county, c("light_gini"), par.settings=list(fontsize=list(text=20)),
+       col.regions = colorRampPalette(brewer.pal(9, 'Reds'))(50), cuts = 49, col = "transparent")
+reds <- rasterTheme(colorRampPalette(brewer.pal(9, 'Reds'))(50))
+usa_10 <- raster("Smoothed Gini/focal/USA/usa_gini_2010.tif")
+usa_10 <- setExtent(usa_10, ext = extent(-179, -50, 19, 71), keepres = T)
+levelplot(usa_10, margin = F, par.settings = reds, at = brk_g, xlab = NULL, ylab = NULL, 
+          scales = list(draw = F))
+
+#Fig 4
 levelplot(map_10, margin = F, par.settings = myTheme, at = brk_g) + 
   layer(sp.lines(world, lwd = 0.8, col = 'darkgrey'))
 levelplot(cmap_9010, margin = F, par.settings = myTheme, at = brk, colorkey = mycolorkey) + 
@@ -632,68 +688,14 @@ ggplot(data = data.frame(gini_10_s), aes(x = gini_10_s)) +
   geom_density(adjust = 5, col = 'darkblue', size = 1, linetype = 'dashed') + 
   stat_function(fun = sdnorm, args = list(mean = gini_10_nm$mu[1], sd = gini_10_nm$sigma[1], lambda = gini_10_nm$lambda[1]), geom = "area", fill = 'red', alpha = 0.5) + 
   stat_function(fun = sdnorm, args = list(mean = gini_10_nm$mu[2], sd = gini_10_nm$sigma[2], lambda = gini_10_nm$lambda[2]), geom = "area", fill = 'green', alpha = 0.5) + 
-  labs(x = "", y = "") + theme_minimal()
-ggplot(data = c_gini_9010, aes(x = c_gini_1990_2010)) + 
+  labs(x = "", y = "") + theme_minimal(base_size = 20)
+ggplot(data = data.frame(c_gini_9010_s), aes(x = c_gini_9010_s)) + 
   geom_histogram(aes(y = ..density..), fill = 'cornflowerblue', color = 'black') + 
   geom_density(adjust = 5, col = 'darkblue', size = 1, linetype = 'dashed') + 
-  labs(x = "", y = "") + theme_minimal()
+  labs(x = "", y = "") + theme_minimal(base_size = 20)
 
 
-#Fig 2
-ggplot(data = US_ineq_10[US_ineq_10$sol > 1.1e6,], aes(light_gini_lpp, Estimate..Gini.Index)) + 
-  geom_text(aes(label = NAME), size = 3) + stat_smooth(method = lm, se = F) +
-  theme(axis.title.x=element_blank(), axis.title.y=element_blank())
-
-US_states_10@bbox <- as.matrix(extent(usa_10))
-spplot(US_states_10, c("Estimate..Gini.Index"), 
-       col.regions = colorRampPalette(brewer.pal(9, 'Reds'))(50), cuts = 49, col = "transparent")
-spplot(US_states_10, c("light_gini"), 
-       col.regions = colorRampPalette(brewer.pal(9, 'Reds'))(50), cuts = 49, col = "transparent")
-spplot(US_county, c("Estimate..Gini.Index"), 
-       col.regions = colorRampPalette(brewer.pal(9, 'Reds'))(50), cuts = 49, col = "transparent")
-spplot(US_county, c("Estimate..Gini.Index"), 
-       col.regions = my.colors(100), cuts = 99, col = "transparent")
-spplot(US_county, c("light_gini"), 
-       col.regions = my.colors(100), cuts = 99, col = "transparent")
-reds <- rasterTheme(colorRampPalette(brewer.pal(9, 'Reds'))(50))
-usa_10 <- raster("Smoothed Gini/focal/USA/usa_gini_2010.tif")
-usa_10 <- setExtent(usa_10, ext = extent(-179, -50, 19, 71), keepres = T)
-levelplot(usa_10, margin = F, par.settings = reds, at = brk_g, xlab = NULL, ylab = NULL, 
-          scales = list(draw = F))
-
-#Fig 4
-hi <- WIID[WIID$income_cat == 'High Income', 'ISO3']
-mi <- WIID[WIID$income_cat == 'Middle Income', 'ISO3']
-li <- WIID[WIID$income_cat == 'Low Income', 'ISO3']
-swiid_df[swiid_df$ISO3 %in% hi, 'income_cat'] <- 'High Income'
-swiid_df[swiid_df$ISO3 %in% mi, 'income_cat'] <- 'Middle Income'
-swiid_df[swiid_df$ISO3 %in% li, 'income_cat'] <- 'Low Income'
-ggplot(data = swiid_df, aes(income_cat, light_gini_lpp)) + 
-  geom_boxplot(colour = 'darkblue', fill = 'lightblue', size = 1) +
-  labs(x = '', y = '') +
-  theme_minimal() + xlim(c('High Income', 'Low Income', 'Middle Income'))
-ggplot(data = swiid_df, aes(income_cat, gini_disp)) + 
-  geom_boxplot(colour = 'darkblue', fill = 'lightblue', size = 1) +
-  labs(x = '', y = '') +
-  theme_minimal() + xlim(c('High Income', 'Low Income', 'Middle Income'))
-ggplot(data = swiid_df, aes(region, light_gini_lpp)) + 
-  geom_boxplot(colour = 'red4', fill = 'indianred1', size = 1) +
-  labs(x = '', y = '') +
-  theme_minimal() 
-ggplot(data = swiid_df, aes(region, gini_disp)) + 
-  geom_boxplot(colour = 'red4', fill = 'indianred1', size = 1) +
-  labs(x = '', y = '') +
-  theme_minimal() 
-wilcox.test(swiid_df[swiid_df$income_cat == "High Income", "light_gini_lpp"], 
-            swiid_df[swiid_df$income_cat == "Low Income", "light_gini_lpp"], 
-            alternative = "two.sided")
-wilcox.test(swiid_df[swiid_df$income_cat == "High Income", "light_gini_lpp"], 
-            swiid_df[swiid_df$income_cat == "Middle Income", "light_gini_lpp"], 
-            alternative = "two.sided")
-by(swiid_df$light_gini_lpp, swiid_df$income_cat, mean)
-by(swiid_df$light_gini_lpp, swiid_df$region, mean)
-
-#Fig 5 
+#Extra figs
 usa_90 <- raster("Smoothed Gini/focal/USA/usa_gini_1990.tif")
 usa_95 <- raster("Smoothed Gini/focal/USA/usa_gini_1995.tif")
 usa_00 <- raster("Smoothed Gini/focal/USA/usa_gini_2000.tif")
